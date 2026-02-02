@@ -1,0 +1,160 @@
+# BLE Center - Kotlin Multiplatform Project Rules
+
+## Project Overview
+This is a **Kotlin Multiplatform Mobile (KMM)** application for managing Bluetooth Low Energy (BLE) devices. The project targets both Android and iOS platforms with shared business logic and UI using Compose Multiplatform.
+
+## Project Structure
+
+### Root Structure
+- `/composeApp` - Main application module containing shared and platform-specific code
+- `/iosApp` - iOS native application entry point (Swift/SwiftUI)
+- `/gradle` - Gradle configuration files including version catalogs
+
+### Source Code Organization (`composeApp/src/`)
+- **`commonMain/`** - Shared code for all platforms
+  - UI components (Compose Multiplatform)
+  - Business logic
+  - Data models
+  - `expect` declarations for platform-specific APIs
+- **`androidMain/`** - Android-specific implementations
+  - `actual` implementations of `expect` classes
+  - Android-specific BLE APIs (BluetoothAdapter, ScanCallback)
+  - MainActivity entry point
+- **`iosMain/`** - iOS-specific implementations
+  - `actual` implementations of `expect` classes
+  - CoreBluetooth integration (to be implemented)
+  - MainViewController entry point
+
+## Technology Stack
+
+### Core Technologies
+- **Kotlin**: 2.3.0
+- **Kotlin Multiplatform**: For cross-platform code sharing
+- **Compose Multiplatform**: 1.10.0 - Shared UI framework
+- **Material3**: UI design system
+
+### Android
+- **Min SDK**: 24
+- **Target SDK**: 36
+- **Compile SDK**: 36
+- **JVM Target**: 11
+- **Android Gradle Plugin**: 8.11.2
+
+### iOS
+- **Targets**: iosArm64, iosSimulatorArm64
+- **Framework**: Static framework named "ComposeApp"
+
+### Key Dependencies
+- `androidx.lifecycle:lifecycle-viewmodel-compose` - ViewModel support
+- `androidx.lifecycle:lifecycle-runtime-compose` - Lifecycle-aware composables
+- `org.jetbrains.compose.*` - Compose Multiplatform components
+
+## Architecture Patterns
+
+### Expect/Actual Pattern
+The project uses Kotlin's `expect/actual` mechanism for platform-specific implementations:
+
+```kotlin
+// commonMain - expect declaration
+expect class BleManager {
+    fun startScan()
+    fun stopScan()
+}
+
+// androidMain - actual implementation
+actual class BleManager(private val context: Context?) {
+    // Android-specific implementation using BluetoothAdapter
+}
+
+// iosMain - actual implementation
+actual class BleManager {
+    // iOS-specific implementation using CoreBluetooth
+}
+```
+
+### UI Architecture
+- **Compose Multiplatform** for shared UI
+- **Material3** design system
+- **State management**: Using `remember` and `mutableStateOf` for local state
+- **Theme**: Custom theme in `ui.theme` package
+
+## Code Conventions
+
+### Package Structure
+- Base package: `com.blecenter.blecenter`
+- UI theme: `com.blecenter.blecenter.ui.theme`
+
+### Naming Conventions
+- Use Kotlin naming conventions (camelCase for functions/variables, PascalCase for classes)
+- Platform-specific files: `*.android.kt` for Android, `*.ios.kt` for iOS
+- Platform implementations: Use `actual` keyword
+
+### File Organization
+- Keep platform-specific code in respective `*Main` folders
+- Shared business logic in `commonMain`
+- UI components in `commonMain` unless platform-specific styling is needed
+
+## BLE Implementation Details
+
+### Android BLE
+- Uses `BluetoothAdapter` and `BluetoothLeScanner`
+- Requires permissions: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION
+- Permissions declared in `AndroidManifest.xml`
+- Uses `ScanCallback` for scan results
+
+### iOS BLE
+- Should use CoreBluetooth framework (currently placeholder)
+- Requires Info.plist entries for Bluetooth usage descriptions
+
+### Current State
+- Android BLE scanning is partially implemented
+- iOS BLE scanning is a placeholder (needs CoreBluetooth implementation)
+- Device connection functionality is not yet implemented
+
+## Development Guidelines
+
+### Adding New Features
+1. **Shared Logic**: Add to `commonMain` if it can be shared
+2. **Platform-Specific**: Use `expect/actual` pattern
+3. **UI Components**: Use Compose Multiplatform in `commonMain`
+4. **Platform UI**: Only if platform-specific UI is absolutely necessary
+
+### Testing
+- Common tests go in `commonTest`
+- Platform-specific tests in respective test source sets
+
+### Building
+- **Android**: `./gradlew :composeApp:assembleDebug`
+- **iOS**: Open `/iosApp` in Xcode and run from there
+
+## Important Notes
+
+1. **Package Name**: `com.blecenter.blecenter`
+2. **App ID (Android)**: `com.blecenter.blecenter`
+3. **Framework Name (iOS)**: `ComposeApp`
+4. **Version**: 1.0 (versionCode: 1, versionName: "1.0")
+
+## Common Tasks
+
+### Adding a New Platform-Specific API
+1. Declare `expect` in `commonMain`
+2. Implement `actual` in both `androidMain` and `iosMain`
+3. Ensure both implementations have the same public API
+
+### Adding Dependencies
+- Use version catalog in `gradle/libs.versions.toml`
+- Add to appropriate source set dependencies in `composeApp/build.gradle.kts`
+
+### UI Development
+- Use Material3 components from Compose Multiplatform
+- Follow Material Design guidelines
+- Test on both platforms when possible
+
+## Notes for AI Assistants
+
+- This is a BLE device management application
+- Focus on cross-platform code sharing where possible
+- When implementing platform-specific features, ensure both platforms are updated
+- The iOS BLE implementation is incomplete and needs CoreBluetooth integration
+- Always consider both Android and iOS when making changes to shared code
+- Use Compose Multiplatform best practices for UI development
