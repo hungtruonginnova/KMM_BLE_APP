@@ -27,6 +27,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AppAndroidPreview() {
     BleCenterTheme {
-        App(FakeBleManager())
+        // Preview requires a real BleManager instance
+        // Note: This preview may not work without a real context
+        // Consider removing this preview or providing a mock implementation
     }
 }

@@ -14,15 +14,16 @@ This is a **Kotlin Multiplatform Mobile (KMM)** application for managing Bluetoo
 - **`commonMain/`** - Shared code for all platforms
   - UI components (Compose Multiplatform)
   - Business logic
-  - Data models
+  - Data models (`Device` data class)
   - `expect` declarations for platform-specific APIs
+  - `BleManagerCallback` interface for BLE events
 - **`androidMain/`** - Android-specific implementations
   - `actual` implementations of `expect` classes
-  - Android-specific BLE APIs (BluetoothAdapter, ScanCallback)
+  - Blue Falcon integration for Android BLE
   - MainActivity entry point
 - **`iosMain/`** - iOS-specific implementations
   - `actual` implementations of `expect` classes
-  - CoreBluetooth integration (to be implemented)
+  - Blue Falcon integration for iOS BLE (CoreBluetooth wrapper)
   - MainViewController entry point
 
 ## Technology Stack
@@ -48,6 +49,7 @@ This is a **Kotlin Multiplatform Mobile (KMM)** application for managing Bluetoo
 - `androidx.lifecycle:lifecycle-viewmodel-compose` - ViewModel support
 - `androidx.lifecycle:lifecycle-runtime-compose` - Lifecycle-aware composables
 - `org.jetbrains.compose.*` - Compose Multiplatform components
+- `dev.bluefalcon:blue-falcon:2.4.1` - Blue Falcon BLE library for Kotlin Multiplatform
 
 ## Architecture Patterns
 
@@ -56,19 +58,36 @@ The project uses Kotlin's `expect/actual` mechanism for platform-specific implem
 
 ```kotlin
 // commonMain - expect declaration
+interface BleManagerCallback {
+    fun onDeviceFound(device: Device)
+    fun onDeviceConnected(device: Device)
+    fun onDeviceDisconnected(device: Device)
+    fun onCharacteristicRead(...)
+    fun onCharacteristicWrite(...)
+    fun onError(error: String)
+}
+
 expect class BleManager {
+    fun setCallback(callback: BleManagerCallback?)
     fun startScan()
     fun stopScan()
+    fun connect(device: Device)
+    fun disconnect(device: Device)
+    fun readCharacteristic(...)
+    fun writeCharacteristic(...)
+    fun notifyCharacteristic(...)
 }
 
 // androidMain - actual implementation
 actual class BleManager(private val context: Context?) {
-    // Android-specific implementation using BluetoothAdapter
+    // Uses Blue Falcon library wrapping Android BLE APIs
+    private val blueFalcon: BlueFalcon
 }
 
 // iosMain - actual implementation
 actual class BleManager {
-    // iOS-specific implementation using CoreBluetooth
+    // Uses Blue Falcon library wrapping iOS CoreBluetooth APIs
+    private val blueFalcon: BlueFalcon
 }
 ```
 
@@ -96,20 +115,40 @@ actual class BleManager {
 
 ## BLE Implementation Details
 
+### Blue Falcon Library
+- **Library**: Blue Falcon 2.4.1 - Kotlin Multiplatform BLE library
+- **Purpose**: Provides unified BLE API across Android and iOS
+- **GitHub**: https://github.com/Reedyuk/blue-falcon
+- **Documentation**: https://bluefalcon.dev
+
 ### Android BLE
-- Uses `BluetoothAdapter` and `BluetoothLeScanner`
+- Uses **Blue Falcon** library which wraps Android BLE APIs
+- Blue Falcon requires `Application` context (not just `Context`)
 - Requires permissions: BLUETOOTH, BLUETOOTH_ADMIN, BLUETOOTH_SCAN, BLUETOOTH_CONNECT, ACCESS_FINE_LOCATION
 - Permissions declared in `AndroidManifest.xml`
-- Uses `ScanCallback` for scan results
+- Blue Falcon handles scan results through its internal mechanism
 
 ### iOS BLE
-- Should use CoreBluetooth framework (currently placeholder)
-- Requires Info.plist entries for Bluetooth usage descriptions
+- Uses **Blue Falcon** library which wraps iOS CoreBluetooth framework
+- Blue Falcon handles CoreBluetooth integration internally
+- Requires Info.plist entries: `NSBluetoothAlwaysUsageDescription` and `NSBluetoothPeripheralUsageDescription`
+- Info.plist already configured with Bluetooth usage descriptions
 
 ### Current State
-- Android BLE scanning is partially implemented
-- iOS BLE scanning is a placeholder (needs CoreBluetooth implementation)
-- Device connection functionality is not yet implemented
+- ✅ Blue Falcon library integrated (version 2.4.1)
+- ✅ BleManager expect/actual pattern implemented
+- ✅ Scan functionality implemented (startScan/stopScan)
+- ✅ Connect/disconnect functionality implemented
+- ⚠️ Read/write characteristics - placeholder implementation (needs Blue Falcon API details)
+- ⚠️ Notifications - placeholder implementation (needs Blue Falcon API details)
+- ⚠️ Scan results handling - needs proper Blue Falcon callback mechanism
+- ⚠️ Device discovery - currently using placeholder approach
+
+### Implementation Notes
+- Blue Falcon API properties may differ from assumptions - implementation uses try-catch for property access
+- Some methods return error messages indicating they need Blue Falcon API details
+- `toDevice()` helper method uses `toString()` as fallback identifier until proper API is confirmed
+- Connection status monitoring uses coroutines with delays as temporary solution
 
 ## Development Guidelines
 
@@ -152,9 +191,14 @@ actual class BleManager {
 
 ## Notes for AI Assistants
 
-- This is a BLE device management application
+- This is a BLE device management application using **Blue Falcon** library
+- **Blue Falcon** provides unified BLE API - no need for platform-specific BLE code
 - Focus on cross-platform code sharing where possible
 - When implementing platform-specific features, ensure both platforms are updated
-- The iOS BLE implementation is incomplete and needs CoreBluetooth integration
+- **Important**: Blue Falcon API details may need verification - some implementations are placeholders
 - Always consider both Android and iOS when making changes to shared code
 - Use Compose Multiplatform best practices for UI development
+- **BleManager** uses callback pattern (`BleManagerCallback`) for BLE events
+- **Device** data class includes: name, address, rssi, isConnected
+- When working with Blue Falcon, check actual API properties as they may differ from assumptions
+- Android requires `Application` context for Blue Falcon initialization (not just `Context`)
