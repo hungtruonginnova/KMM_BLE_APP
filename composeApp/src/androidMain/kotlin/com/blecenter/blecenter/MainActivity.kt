@@ -6,14 +6,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import com.blecenter.blecenter.ui.theme.BleCenterTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        val bleManager = BleManager(applicationContext)
+
         setContent {
-            App()
+            BleCenterTheme {
+                App(bleManager)
+            }
         }
     }
 }
@@ -21,5 +26,7 @@ class MainActivity : ComponentActivity() {
 @Preview
 @Composable
 fun AppAndroidPreview() {
-    App()
+    BleCenterTheme {
+        App(FakeBleManager())
+    }
 }
