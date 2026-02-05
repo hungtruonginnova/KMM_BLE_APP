@@ -1,3 +1,7 @@
+---
+name: project-rules
+description: This is a new rule
+---
 # BLE Center - Kotlin Multiplatform Project Rules
 
 ## Project Overview

@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -29,6 +30,7 @@ fun App(bleManager: BleManager) {
     BleCenterTheme {
         var isScanning by remember { mutableStateOf(false) }
         var errorMessage by remember { mutableStateOf<String?>(null) }
+        var connectingDeviceAddress by remember { mutableStateOf<String?>(null) }
         val devices = remember { mutableStateListOf<Device>() }
         val connectedDevices = remember { mutableSetOf<String>() }
 
@@ -45,10 +47,15 @@ fun App(bleManager: BleManager) {
                 }
 
                 override fun onDeviceConnected(device: Device) {
+                    connectingDeviceAddress = null
+                    isScanning = false
+                    bleManager.stopScan()
                     connectedDevices.add(device.address)
                     val index = devices.indexOfFirst { it.address == device.address }
                     if (index >= 0) {
                         devices[index] = device.copy(isConnected = true)
+                    } else {
+                        devices.add(device.copy(isConnected = true))
                     }
                 }
 
@@ -79,6 +86,7 @@ fun App(bleManager: BleManager) {
 
                 override fun onError(error: String) {
                     errorMessage = error
+                    connectingDeviceAddress = null
                 }
             })
         }
@@ -106,7 +114,25 @@ fun App(bleManager: BleManager) {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(text = if (isScanning) "Scanning..." else "Not scanning")
+            Text(
+                text = when {
+                    connectingDeviceAddress != null -> "Connecting..."
+                    isScanning -> "Scanning..."
+                    else -> "Not scanning"
+                }
+            )
+
+            if (connectingDeviceAddress != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Connecting to device...", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
 
             errorMessage?.let { error ->
                 Spacer(modifier = Modifier.height(8.dp))
@@ -118,7 +144,13 @@ fun App(bleManager: BleManager) {
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            if (devices.isEmpty()) {
+            val displayDevices = if (connectedDevices.isNotEmpty()) {
+                devices.filter { it.address in connectedDevices }
+            } else {
+                devices
+            }
+
+            if (displayDevices.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -131,13 +163,16 @@ fun App(bleManager: BleManager) {
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(horizontal = 16.dp)
                 ) {
-                    items(devices) { device ->
+                    items(displayDevices) { device ->
+                        val isConnecting = connectingDeviceAddress == device.address
                         DeviceListItem(
                             device = device,
+                            isConnecting = isConnecting,
                             onConnectClick = {
                                 if (device.isConnected) {
                                     bleManager.disconnect(device)
-                                } else {
+                                } else if (!isConnecting) {
+                                    connectingDeviceAddress = device.address
                                     bleManager.connect(device)
                                 }
                             }
@@ -150,7 +185,11 @@ fun App(bleManager: BleManager) {
 }
 
 @Composable
-fun DeviceListItem(device: Device, onConnectClick: (Device) -> Unit) {
+fun DeviceListItem(
+    device: Device,
+    isConnecting: Boolean = false,
+    onConnectClick: (Device) -> Unit
+) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -168,16 +207,31 @@ fun DeviceListItem(device: Device, onConnectClick: (Device) -> Unit) {
                 device.rssi?.let { rssi ->
                     Text(text = "RSSI: $rssi dBm", style = MaterialTheme.typography.bodySmall)
                 }
-                if (device.isConnected) {
-                    Text(
+                when {
+                    isConnecting -> Text(
+                        text = "Connecting...",
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    device.isConnected -> Text(
                         text = "Connected",
                         color = MaterialTheme.colorScheme.primary,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
-            Button(onClick = { onConnectClick(device) }) {
-                Text(if (device.isConnected) "Disconnect" else "Connect")
+            Button(
+                onClick = { onConnectClick(device) },
+                enabled = !isConnecting
+            ) {
+                if (isConnecting) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(if (device.isConnected) "Disconnect" else "Connect")
+                }
             }
         }
     }

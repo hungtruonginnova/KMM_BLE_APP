@@ -1,38 +1,37 @@
+@file:OptIn(kotlin.uuid.ExperimentalUuidApi::class)
 package com.blecenter.blecenter
 
 import android.app.Application
 import android.content.Context
+import dev.bluefalcon.AdvertisementDataRetrievalKeys
 import dev.bluefalcon.BlueFalcon
-import dev.bluefalcon.BluetoothPeripheral
+import dev.bluefalcon.BlueFalconDelegate
 import dev.bluefalcon.BluetoothCharacteristic
-import kotlinx.coroutines.CoroutineScope
+import dev.bluefalcon.BluetoothCharacteristicDescriptor
+import dev.bluefalcon.BluetoothPeripheral
+import dev.bluefalcon.BluetoothPeripheralState
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.delay
 
-actual open class BleManager(private val context: Context?) {
+actual open class BleManager(private val context: Context?) : BlueFalconDelegate {
+
     private var blueFalcon: BlueFalcon? = null
     private var callback: BleManagerCallback? = null
     private val peripheralMap = mutableMapOf<String, BluetoothPeripheral>()
     private var isScanning = false
+    private val scope = MainScope()
 
     init {
         val application = context?.applicationContext as? Application
         application?.let {
             try {
                 blueFalcon = BlueFalcon(log = null, it)
-                // Start monitoring for discovered peripherals
-                startMonitoringPeripherals()
+                blueFalcon?.delegates?.add(this)
             } catch (e: Exception) {
                 callback?.onError("Failed to initialize Blue Falcon: ${e.message}")
             }
         }
-    }
-
-    private fun startMonitoringPeripherals() {
-        // Blue Falcon handles scan results through its own mechanism
-        // We'll need to implement proper callback handling based on Blue Falcon's actual API
-        // For now, this is a placeholder
     }
 
     actual fun setCallback(callback: BleManagerCallback?) {
@@ -47,7 +46,7 @@ actual open class BleManager(private val context: Context?) {
         try {
             isScanning = true
             peripheralMap.clear()
-            blueFalcon?.scan()
+            blueFalcon?.scan(emptyList())
         } catch (e: Exception) {
             isScanning = false
             callback?.onError("Failed to start scan: ${e.message}")
@@ -71,13 +70,6 @@ actual open class BleManager(private val context: Context?) {
         }
         try {
             blueFalcon?.connect(peripheral, autoConnect = false)
-            // Connection status will be handled by Blue Falcon callbacks
-            // For now, we'll assume connection succeeds after a delay
-            CoroutineScope(Dispatchers.Main).launch {
-                delay(1000)
-                val updatedDevice = device.copy(isConnected = true)
-                callback?.onDeviceConnected(updatedDevice)
-            }
         } catch (e: Exception) {
             callback?.onError("Failed to connect: ${e.message}")
         }
@@ -91,8 +83,6 @@ actual open class BleManager(private val context: Context?) {
         }
         try {
             blueFalcon?.disconnect(peripheral)
-            val updatedDevice = toDevice(peripheral)
-            callback?.onDeviceDisconnected(updatedDevice)
         } catch (e: Exception) {
             callback?.onError("Failed to disconnect: ${e.message}")
         }
@@ -104,10 +94,13 @@ actual open class BleManager(private val context: Context?) {
             callback?.onError("Device not found: ${device.address}")
             return
         }
+        val characteristic = findCharacteristic(peripheral, serviceUuid, characteristicUuid)
+        if (characteristic == null) {
+            callback?.onError("Characteristic not found: $characteristicUuid")
+            return
+        }
         try {
-            // Blue Falcon API may require different approach to access services/characteristics
-            // This is a simplified implementation - may need adjustment based on actual API
-            callback?.onError("Characteristic read not yet fully implemented - needs Blue Falcon API details")
+            blueFalcon?.readCharacteristic(peripheral, characteristic)
         } catch (e: Exception) {
             callback?.onError("Failed to read characteristic: ${e.message}")
         }
@@ -119,10 +112,16 @@ actual open class BleManager(private val context: Context?) {
             callback?.onError("Device not found: ${device.address}")
             return
         }
+        val characteristic = findCharacteristic(peripheral, serviceUuid, characteristicUuid)
+        if (characteristic == null) {
+            callback?.onError("Characteristic not found: $characteristicUuid")
+            return
+        }
         try {
-            // Blue Falcon API may require different approach to access services/characteristics
-            // This is a simplified implementation - may need adjustment based on actual API
-            callback?.onError("Characteristic write not yet fully implemented - needs Blue Falcon API details")
+            blueFalcon?.writeCharacteristic(peripheral, characteristic, value, 2)
+            scope.launch(Dispatchers.Main) {
+                callback?.onCharacteristicWrite(device, serviceUuid, characteristicUuid)
+            }
         } catch (e: Exception) {
             callback?.onError("Failed to write characteristic: ${e.message}")
         }
@@ -134,35 +133,135 @@ actual open class BleManager(private val context: Context?) {
             callback?.onError("Device not found: ${device.address}")
             return
         }
+        val characteristic = findCharacteristic(peripheral, serviceUuid, characteristicUuid)
+        if (characteristic == null) {
+            callback?.onError("Characteristic not found: $characteristicUuid")
+            return
+        }
         try {
-            // Blue Falcon API may require different approach to access services/characteristics
-            // This is a simplified implementation - may need adjustment based on actual API
-            callback?.onError("Characteristic notification not yet fully implemented - needs Blue Falcon API details")
+            blueFalcon?.notifyCharacteristic(peripheral, characteristic, enable)
         } catch (e: Exception) {
             callback?.onError("Failed to set notification: ${e.message}")
         }
     }
 
-    // Helper method to convert BluetoothPeripheral to Device
-    // Note: This needs to be adjusted based on Blue Falcon's actual API
+    // ==================== BlueFalconDelegate ====================
+
+    override fun didDiscoverDevice(
+        bluetoothPeripheral: BluetoothPeripheral,
+        advertisementData: Map<AdvertisementDataRetrievalKeys, Any>
+    ) {
+        val address = bluetoothPeripheral.uuid
+        peripheralMap[address] = bluetoothPeripheral
+        val device = toDevice(bluetoothPeripheral)
+        scope.launch(Dispatchers.Main) {
+            callback?.onDeviceFound(device)
+        }
+    }
+
+    override fun didConnect(bluetoothPeripheral: BluetoothPeripheral) {
+        peripheralMap[bluetoothPeripheral.uuid] = bluetoothPeripheral
+        val device = toDevice(bluetoothPeripheral).copy(isConnected = true)
+        scope.launch(Dispatchers.Main) {
+            callback?.onDeviceConnected(device)
+        }
+    }
+
+    override fun didDisconnect(bluetoothPeripheral: BluetoothPeripheral) {
+        val device = toDevice(bluetoothPeripheral).copy(isConnected = false)
+        scope.launch(Dispatchers.Main) {
+            callback?.onDeviceDisconnected(device)
+        }
+    }
+
+    override fun didDiscoverServices(bluetoothPeripheral: BluetoothPeripheral) {
+        // Services discovered after connect; no direct callback in BleManagerCallback
+    }
+
+    override fun didDiscoverCharacteristics(bluetoothPeripheral: BluetoothPeripheral) {
+        // Characteristics discovered; no direct callback in BleManagerCallback
+    }
+
+    override fun didCharacteristcValueChanged(
+        bluetoothPeripheral: BluetoothPeripheral,
+        bluetoothCharacteristic: BluetoothCharacteristic
+    ) {
+        val value = bluetoothCharacteristic.value ?: return
+        val serviceUuid = findServiceUuid(bluetoothPeripheral, bluetoothCharacteristic) ?: return
+        val characteristicUuid = bluetoothCharacteristic.uuid.toString()
+        val device = toDevice(bluetoothPeripheral)
+        scope.launch(Dispatchers.Main) {
+            callback?.onCharacteristicRead(device, serviceUuid, characteristicUuid, value)
+        }
+    }
+
+    override fun didRssiUpdate(bluetoothPeripheral: BluetoothPeripheral) {
+        // Optional: could notify UI of RSSI change
+    }
+
+    override fun didUpdateMTU(bluetoothPeripheral: BluetoothPeripheral, status: Int) {
+        // MTU updated
+    }
+
+    override fun didReadDescriptor(
+        bluetoothPeripheral: BluetoothPeripheral,
+        bluetoothCharacteristicDescriptor: BluetoothCharacteristicDescriptor
+    ) {}
+
+    override fun didWriteDescriptor(
+        bluetoothPeripheral: BluetoothPeripheral,
+        bluetoothCharacteristicDescriptor: BluetoothCharacteristicDescriptor
+    ) {}
+
+    override fun didWriteCharacteristic(
+        bluetoothPeripheral: BluetoothPeripheral,
+        bluetoothCharacteristic: BluetoothCharacteristic,
+        success: Boolean
+    ) {
+        if (success) {
+            val device = toDevice(bluetoothPeripheral)
+            val serviceUuid = findServiceUuid(bluetoothPeripheral, bluetoothCharacteristic) ?: return
+            scope.launch(Dispatchers.Main) {
+                callback?.onCharacteristicWrite(device, serviceUuid, bluetoothCharacteristic.uuid.toString())
+            }
+        }
+    }
+
+    // ==================== Helpers ====================
+
     private fun toDevice(peripheral: BluetoothPeripheral): Device {
-        // Placeholder implementation - needs actual Blue Falcon API properties
-        // For now, using toString() as a fallback identifier
-        val identifier = peripheral.toString()
+        val isConnected = blueFalcon?.connectionState(peripheral) == BluetoothPeripheralState.Connected
         return Device(
-            name = "BLE Device",
-            address = identifier,
-            rssi = null,
-            isConnected = false
+            name = peripheral.name ?: "Unknown",
+            address = peripheral.uuid,
+            rssi = peripheral.rssi?.toInt(),
+            isConnected = isConnected
         )
     }
 
-    // Method to handle discovered peripherals (called when scan finds devices)
-    // This should be called by Blue Falcon's callback mechanism when devices are discovered
-    fun onPeripheralDiscovered(peripheral: BluetoothPeripheral) {
-        val identifier = peripheral.toString()
-        peripheralMap[identifier] = peripheral
-        val device = toDevice(peripheral)
-        callback?.onDeviceFound(device)
+    private fun findCharacteristic(
+        peripheral: BluetoothPeripheral,
+        serviceUuid: String,
+        characteristicUuid: String
+    ): BluetoothCharacteristic? {
+        val service = peripheral.services.values.find { service ->
+            service.uuid.toString().equals(serviceUuid, ignoreCase = true)
+        } ?: return null
+        return service.characteristics.find {
+            it.uuid.toString().equals(characteristicUuid, ignoreCase = true)
+        }
+    }
+
+    private fun findServiceUuid(
+        peripheral: BluetoothPeripheral,
+        characteristic: BluetoothCharacteristic
+    ): String? {
+        val charUuidStr = characteristic.uuid.toString()
+        for (service in peripheral.services.values) {
+            if (service.characteristics.any { it.uuid.toString() == charUuidStr }) {
+                return service.uuid.toString()
+            }
+        }
+        return null
     }
 }
